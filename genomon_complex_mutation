@@ -1,0 +1,27 @@
+#! /usr/bin/env python
+
+from genomon_complex_mutation.run import *
+import argparse
+
+parser = argparse.ArgumentParser(prog = "genomon_complex_mutation")
+
+parser.add_argument("--version", action = "version", version = "genomon_complex_mutation-0.1.0")
+
+parser.add_argument("bam_file", metavar = "sequence.bam", default = None, type = str,
+                    help = "the path to the bam file")
+
+parser.add_argument("mutation_file", metavar = "mutation.txt", default = None, type = str,
+                    help = "the path to the mutation list file")
+
+parser.add_argument("reference_genome", metavar = "reference.fa", default = None, type = str,
+                    help = "the path to the reference genome sequence")
+
+parser.add_argument("output_file", metavar = "output.txt", default = None, type = str,
+                    help = "the path to output file")
+
+parser.add_argument("--debug", default = False, action = 'store_true', help = "keep intermediate files")
+ 
+args = parser.parse_args()
+
+main(args)
+
