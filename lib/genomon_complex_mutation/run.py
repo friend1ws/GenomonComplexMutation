@@ -81,3 +81,9 @@ def main(args):
 
     hout.close()
 
+    if args.debug == False:
+        subprocess.check_call(["rm", "-rf", args.output_file + ".tmp.mutation.sorted.txt"])
+        subprocess.check_call(["rm", "-rf", args.output_file + ".tmp.multi_mutation_region.txt"])
+        subprocess.check_call(["rm", "-rf", args.output_file + ".tmp.template.seq.fa"]) 
+        subprocess.check_call(["rm", "-rf", args.output_file + ".tmp.short_read.seq.fa"])
+ 
