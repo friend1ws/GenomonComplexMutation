@@ -1,6 +1,7 @@
 #! /usr/bin/env python
 
 import sys
+import pysam
 import my_utils.seq
 
 def get_multi_mutation_region(input_file, output_file, dist_thres = 20):
@@ -68,60 +69,129 @@ def generate_configurations(dim):
     return conf
 
 
-def generate_template_seq(input_file, output_file, reference, half_template_size = 50):
+def generate_template_seq(region_chr, region_start, region_end, reference, region_mutations, output_file, template_margin = 200):
 
-    with open(input_file, 'r') as hin:
-        for line in hin:
+    hout = open(output_file, 'w')
 
-            region_chr, region_start, region_end, region_mutations = line.rstrip('\n').split('\t')
-            tmp_region = region_chr + ':' + str(int(region_start) - half_template_size + 1) + '-' + str(int(region_end) + half_template_size - 1)
-            org_seq = my_utils.seq.get_seq(reference, tmp_region)
+    tmp_region = region_chr + ':' + str(int(region_start) - template_margin + 1) + '-' + str(int(region_end) + template_margin - 1)
+    org_seq = my_utils.seq.get_seq(reference, tmp_region)
 
-            mutations_in_region = region_mutations.split(';')
-            for conf in generate_configurations(len(mutations_in_region)):
+    mutations_in_region = region_mutations.split(';')
+    for conf in generate_configurations(len(mutations_in_region)):
 
-                mut_seq = org_seq
-                off_set = 0
-                for i in range(len(mutations_in_region)):
+        mut_seq = org_seq
+        off_set = 0
+        for i in range(len(mutations_in_region)):
 
-                    if conf[i] == 0: continue
+            if conf[i] == 0: continue
 
-                    mut_chr, mut_start, mut_end, mut_ref, mut_alt = mutations_in_region[i].split(',')
+            mut_chr, mut_start, mut_end, mut_ref, mut_alt = mutations_in_region[i].split(',')
 
-                    # in this case, we remove nucleotides from concatenated sequences
-                    mut_start_rel = int(mut_start) - int(region_start) + half_template_size - 1 + off_set
-                    mut_end_rel = int(mut_end) - int(region_start) + half_template_size - 1 + off_set
+            # in this case, we remove nucleotides from concatenated sequences
+            mut_start_rel = int(mut_start) - int(region_start) + template_margin - 1 + off_set
+            mut_end_rel = int(mut_end) - int(region_start) + template_margin - 1 + off_set
 
-                    # SNV
-                    if mut_ref != '-' and mut_alt != '-': 
+            # SNV
+            if mut_ref != '-' and mut_alt != '-': 
 
-                        # for debug
-                        if mut_seq[mut_start_rel] != mut_ref:
-                            print >> sys.stderr, '\t'.join([mut_chr, str(mut_start), str(mut_end), mut_ref, mut_alt])
-                            print >> sys.stderr, "mutation inconsistent!!!"
-                            sys.exit(1)
-                        mut_seq = mut_seq[:mut_start_rel] + mut_alt + mut_seq[(mut_end_rel + 1):]
+                # for debug
+                if mut_seq[mut_start_rel] != mut_ref:
+                    print >> sys.stderr, '\t'.join([mut_chr, str(mut_start), str(mut_end), mut_ref, mut_alt])
+                    print >> sys.stderr, "mutation inconsistent!!!"
+                    sys.exit(1)
+                mut_seq = mut_seq[:mut_start_rel] + mut_alt + mut_seq[(mut_end_rel + 1):]
 
 
-                    elif mut_alt == '-': # deletion
+            elif mut_alt == '-': # deletion
 
-                        # for debug
-                        if mut_seq[mut_start_rel:(mut_end_rel + 1)] != mut_ref != '-':
-                            print >> sys.stderr, '\t'.join([mut_chr, str(mut_start), str(mut_end), mut_ref, mut_alt])
-                            print >> sys.stderr, "mutation inconsistent!!!"
-                            sys.exit(1)
-                        mut_seq = mut_seq[:mut_start_rel] + mut_seq[(mut_end_rel + 1):]
-                        off_set = off_set - len(mut_ref)
+                # for debug
+                if mut_seq[mut_start_rel:(mut_end_rel + 1)] != mut_ref != '-':
+                    print >> sys.stderr, '\t'.join([mut_chr, str(mut_start), str(mut_end), mut_ref, mut_alt])
+                    print >> sys.stderr, "mutation inconsistent!!!"
+                    sys.exit(1)
+                mut_seq = mut_seq[:mut_start_rel] + mut_seq[(mut_end_rel + 1):]
+                off_set = off_set - len(mut_ref)
 
-                    elif mut_ref == '-': #insertion
-     
-                        mut_seq = mut_seq[:(mut_start_rel + 1)] + mut_alt + mut_seq[(mut_start_rel + 1):]
-                        off_set = off_set + len(mut_alt)
+            elif mut_ref == '-': #insertion
+    
+                mut_seq = mut_seq[:(mut_start_rel + 1)] + mut_alt + mut_seq[(mut_start_rel + 1):]
+                off_set = off_set + len(mut_alt)
 
-                print region_chr + ':' + str(region_start) + '-' + str(region_end) + '_' + ','.join([str(x) for x in conf])
-                print mut_seq
+        print >> hout, '>' + region_chr + ':' + region_start + '-' + region_end + ';' + ','.join([str(x) for x in conf])
+        print >> hout, mut_seq
+
+
+    hout.close()
 
 
 
+def extract_short_read(bam_file, output_file, region_chr, region_start, region_end, short_read_margin = 5):
+
+    bamfile = pysam.Samfile(bam_file, 'rb')
+    hout = open(output_file, 'w') 
+    for read in bamfile.fetch(region_chr, int(region_start), int(region_end)):
+
+        # get the flag information
+        flags = format(int(read.flag), "#014b")[:1:-1]
+
+        # skip unmapped read 
+        if flags[2] == "1" or flags[3] == "1": continue 
+
+        # skip supplementary alignment
+        if flags[8] == "1" or flags[11] == "1": continue
+
+        # skip duplicated reads
+        if flags[10] == "1": continue
+
+        reference_start_pos = read.reference_start + 1
+        reference_end_pos = read.reference_end
+
+        # remove short reads that does not cover the entire mutation regions 
+        if reference_start_pos > int(region_start) - short_read_margin: continue
+        if reference_end_pos < int(region_end) + short_read_margin: continue
+
+        read_id = read.qname + '/1' if flags[6] == '1' else read.qname + '/2'
+        
+        
+        print >> hout, '>' + read_id + '\n' + read.seq
+
+    bamfile.close()
+    hout.close()
+
+
+
+def classify_complex_mutation(region_mutations, configuration):
+
+    mutations_in_region = region_mutations.split(';')
+    active_vector = configuration.split(',')
+
+    positions = []
+    is_cindel = 0
+    for i in range(len(mutations_in_region)):
+        if active_vector[i] == "0": continue
+        mut_chr, mut_start, mut_end, mut_ref, mut_alt = mutations_in_region[i].split(',')
+        if mut_ref == "-" or mut_alt == "-": is_cindel = 1
+        positions.append(int(mut_start))
+
+    positions = sorted(positions)
+    diff_positions = []
+    is_continuous = 1
+    for i in range(len(positions) - 1):
+        if positions[i + 1] - positions[i] != 1: is_continuous = 0 
+
+
+    if is_cindel == 1:
+        return "CINDEL"
+    elif is_continuous == 1:
+        if len(positions) == 2:
+            return "DNV"
+        elif len(positions) == 3:
+            return "TNV"
+        else:
+            return "MNV"
+    else:
+        return "INV"
+
+            
 
 
