@@ -12,6 +12,11 @@ def main(args):
 
     utils.get_multi_mutation_region(args.output_file + ".tmp.mutation.sorted.txt", args.output_file + ".tmp.multi_mutation_region.txt")
 
+    hout = open(args.output_file, 'w')
+    print >> hout, '\t'.join(["Region_Chr", "Region_Start", "Region_End", "Region_Mutations", "Is_Joint", "Mut_Class", 
+                              "First_Haplotype_Count", "First_Haplotype_Ratio", "Second_Haplotype_Count", "Second_Haplotype_Ratio", 
+                              "Configurations", "Read_Counts"])
+
     with open(args.output_file + ".tmp.multi_mutation_region.txt", 'r') as hin:
         for line in hin:
 
@@ -36,11 +41,12 @@ def main(args):
             mut_class = "simple"
             first_count = 0
             second_count = 0
+            total_count = 0
             print_conf = []
             print_count = []
             for ttype, tcount in sorted(type2count.items(), key = lambda x: x[1], reverse=True):
                 treg, tconf = ttype.split(';')
-
+                total_count = total_count + int(tcount)
                 # treatment for reference alignment 
                 if tconf.find("1") == -1: 
                     ref_count = tcount
@@ -51,9 +57,13 @@ def main(args):
                 if tcount == 0: continue
 
                 if tnum == 0:
+                    first_count = tcount
                     if tconf.count("1") >= 2:
                         is_joint = "joint"
                         mut_class = utils.classify_complex_mutation(region_mutations, tconf)
+
+                if tnum == 1:
+                    second_count = tcount
 
                 print_conf.append("(" + tconf + ")")
                 print_count.append(str(tcount))
@@ -62,9 +72,12 @@ def main(args):
 
             print_conf.append("(" + ref_conf + ")")
             print_count.append(str(ref_count))
+            first_ratio = round(float(first_count) / total_count, 3)
+            second_ratio = round(float(second_count) / total_count, 3)
 
-            print region_chr + '\t' + region_start + '\t' + region_end + '\t' + region_mutations + '\t' + \
-                    is_joint + '\t' + mut_class + '\t' + ';'.join(print_conf) + '\t' + ';'.join(print_count)
+            print >> hout, region_chr + '\t' + region_start + '\t' + region_end + '\t' + region_mutations + '\t' + \
+                    is_joint + '\t' + mut_class + '\t' + str(first_count) + '\t' + str(first_ratio) + '\t' + \
+                    str(second_count) + '\t' + str(second_ratio) + '\t' + ';'.join(print_conf) + '\t' + ';'.join(print_count)
 
-
+    hout.close()
 
